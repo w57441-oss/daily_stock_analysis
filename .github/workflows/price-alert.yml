@@ -33,4 +33,5 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS }}
-        run: python main.py --dry-run --stocks $STOCK_LIST
+        run: python main.py --dry-run --stocks 002658
+        # run: python main.py --dry-run --stocks $STOCK_LIST
