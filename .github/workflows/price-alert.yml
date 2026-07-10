@@ -20,8 +20,8 @@ jobs:
       
       - name: 运行价格预警
         env:
-          STOCK_LIST: '002658'
-          AGENT_EVENT_ALERT_RULES_JSON: '[{"stock_code":"002658","alert_type":"price_cross","direction":"above","price":7.45},{"stock_code":"002658","alert_type":"price_cross","direction":"below","price":7.2}]'
+          STOCK_LIST: ${{ vars.STOCK_LIST }}
+          AGENT_EVENT_ALERT_RULES_JSON: ${{ vars.AGENT_EVENT_ALERT_RULES_JSON }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS }}
