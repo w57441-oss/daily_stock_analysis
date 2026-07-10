@@ -1,15 +1,13 @@
 name: 股价预警
 on:
   schedule:
-    # 北京时间 9:25-11:55 = UTC 1:25-3:55
     - cron: '*/5 1-3 * * 1-5'
-    # 北京时间 12:55-15:05 = UTC 4:55-7:05
     - cron: '*/5 5-7 * * 1-5'
   workflow_dispatch:
 jobs:
   alert-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     
     steps:
       - name: 检出代码
@@ -19,19 +17,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-          cache: 'pip
-      - name: 安装依赖
-        run: pip install -r requirements.txt
       
-      - name: 运行预警检查
+      - name: 运行价格预警
         env:
-          AGENT_EVENT_MONITOR_ENABLED: ${{ vars.AGENT_EVENT_MONITOR_ENABLED }}
-          AGENT_EVENT_MONITOR_INTERVAL_MINUTES: ${{ vars.AGENT_EVENT_MONITOR_INTERVAL_MINUTES }}
-          AGENT_EVENT_ALERT_RULES_JSON: ${{ vars.AGENT_EVENT_ALERT_RULES_JSON }}
-          STOCK_LIST: ${{ vars.STOCK_LIST }}
-          # 邮箱配置（改为 Secret）
+          STOCK_LIST: '002658'
+          AGENT_EVENT_ALERT_RULES_JSON: '[{"stock_code":"002658","alert_type":"price_cross","direction":"above","price":7.45},{"stock_code":"002658","alert_type":"price_cross","direction":"below","price":7.2}]'
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ vars.EMAIL_RECEIVERS }}
-        run: python main.py --dry-run --stocks 002658
-        # run: python main.py --dry-run --stocks $STOCK_LIST
+        run: python scripts/price_alert.py
