@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""轻量级价格预警脚本"""
+"""轻量级价格预警脚本 - 支持多规则同时触发"""
 import os
 import json
 import urllib.request
@@ -24,7 +24,7 @@ def send_email(subject, content):
     receivers = os.environ.get('EMAIL_RECEIVERS', '')
     
     if not all([sender, password, receivers]):
-        print(f"邮箱配置不完整: sender={bool(sender)}, password={bool(password)}, receivers={bool(receivers)}")
+        print(f"邮箱配置不完整")
         return False
     
     msg = MIMEText(content, 'plain', 'utf-8')
@@ -72,7 +72,9 @@ def main():
         print(f"预警规则 JSON 解析错误: {e}")
         return
     
-    # 检查每只股票
+    # 按股票分组，收集所有触发的预警
+    all_alerts = {}  # {stock_code: {"name": name, "price": price, "alerts": []}}
+    
     for stock_code in stock_list.split(','):
         stock_code = stock_code.strip()
         if not stock_code:
@@ -82,8 +84,8 @@ def main():
             name, price = fetch_price(stock_code)
             print(f"  {name}({stock_code}): {price:.2f}")
             
-            # 检查预警规则
-            alerts = []
+            # 检查该股票的所有预警规则
+            stock_alerts = []
             for rule in rules:
                 if rule.get('stock_code') != stock_code:
                     continue
@@ -94,19 +96,46 @@ def main():
                     target = rule.get('price', 0)
                     direction = rule.get('direction', 'above')
                     if direction == 'above' and price >= target:
-                        alerts.append(f"突破 {target}")
+                        stock_alerts.append(f"突破 {target}")
                     elif direction == 'below' and price <= target:
-                        alerts.append(f"跌破 {target}")
+                        stock_alerts.append(f"跌破 {target}")
+                
+                elif alert_type == 'price_change_percent':
+                    # 需要昨收价，这里简化处理
+                    pass
+                
+                elif alert_type == 'volume_spike':
+                    # 成交量检查需要历史数据，这里简化
+                    pass
             
-            # 发送通知
-            if alerts:
-                subject = f"【股价预警】{name}({stock_code})"
-                content = f"当前价格: {price:.2f}\n触发: {', '.join(alerts)}\n时间: {now.strftime('%Y-%m-%d %H:%M:%S')}"
-                send_email(subject, content)
+            # 收集该股票的所有触发预警
+            if stock_alerts:
+                all_alerts[stock_code] = {
+                    "name": name,
+                    "price": price,
+                    "alerts": stock_alerts
+                }
+                print(f"    触发: {', '.join(stock_alerts)}")
             else:
                 print(f"    未触发预警")
         
         except Exception as e:
             print(f"  ✗ 错误: {e}")
+    
+    # 统一发送所有触发的预警通知
+    if all_alerts:
+        # 构建通知内容
+        lines = []
+        for code, info in all_alerts.items():
+            lines.append(f"【{info['name']}({code})】")
+            lines.append(f"当前价格: {info['price']:.2f}")
+            lines.append(f"触发条件: {', '.join(info['alerts'])}")
+            lines.append("")
+        
+        subject = f"【股价预警】{len(all_alerts)}只股票触发预警"
+        content = "\n".join(lines) + f"时间: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        send_email(subject, content)
+        print(f"\n共 {len(all_alerts)} 只股票触发预警，已发送通知")
 if __name__ == '__main__':
     main()
