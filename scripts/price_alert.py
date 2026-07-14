@@ -5,18 +5,41 @@ import json
 import urllib.request
 import smtplib
 from email.mime.text import MIMEText
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
+import sys
+
+# 设置北京时间时区
 BJT = timezone(timedelta(hours=8))
+
+def is_trading_time():
+    """
+    检查当前是否在A股有效交易时段（北京时间）
+    范围：9:15-11:30, 13:00-15:00
+    """
+    now = datetime.now(BJT).time()
+    
+    # 上午时段 9:15 - 11:30
+    morning = time(9, 15) <= now <= time(11, 30)
+    # 下午时段 13:00 - 15:00
+    afternoon = time(13, 0) <= now <= time(15, 0)
+    
+    return morning or afternoon
+
 def fetch_price(code):
     """获取股票实时价格"""
     prefix = 'sh' if code.startswith('6') else 'sz'
     url = f"https://qt.gtimg.cn/q={prefix}{code}"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = resp.read().decode('gbk', errors='ignore')
-    value = data.split('=', 1)[1].strip('" ;\n')
-    fields = value.split('~')
-    return fields[1], float(fields[3])  # name, price
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read().decode('gbk', errors='ignore')
+        value = data.split('=', 1)[1].strip('" ;\n')
+        fields = value.split('~')
+        return fields[1], float(fields[3])  # name, price
+    except Exception as e:
+        print(f"获取价格失败: {e}")
+        return None, 0.0
+
 def send_email(subject, content):
     """发送邮件"""
     sender = os.environ.get('EMAIL_SENDER', '')
@@ -41,18 +64,20 @@ def send_email(subject, content):
     except Exception as e:
         print(f"  ✗ 邮件发送失败: {e}")
         return False
+
 def main():
     now = datetime.now(BJT)
     
-    # 检查是否在交易时间
+    # === 核心修改：非交易时段直接退出 ===
+    if not is_trading_time():
+        print(f"⚠️ 跳过执行 | 当前时间 {now.strftime('%H:%M')} 不在交易时段 (9:15-11:30, 13:00-15:00)")
+        sys.exit(0)
+    # ================================
+
+    # 检查是否在周末
     weekday = now.weekday()
     if weekday >= 5:
         print("周末，跳过")
-        return
-    
-    hour_min = now.hour * 100 + now.minute
-    if not (925 <= hour_min <= 1135 or 1255 <= hour_min <= 1505):
-        print(f"非交易时间 {now.strftime('%H:%M')}，跳过")
         return
     
     # 获取配置
@@ -82,6 +107,9 @@ def main():
         
         try:
             name, price = fetch_price(stock_code)
+            if price == 0.0:
+                continue
+                
             print(f"  {name}({stock_code}): {price:.2f}")
             
             # 检查该股票的所有预警规则
@@ -137,5 +165,6 @@ def main():
         
         send_email(subject, content)
         print(f"\n共 {len(all_alerts)} 只股票触发预警，已发送通知")
+
 if __name__ == '__main__':
     main()
