@@ -1,19 +1,21 @@
 name: 股价预警
 on:
   schedule:
-    # 扩大覆盖范围：UTC 1:00-4:55 (原1-3→1-4) → 北京时间 9:00-12:55
-    # 确保覆盖因延迟可能触发的11:30-11:55时段
-    - cron: '*/5 1-3 * * 1-5'
+    # 修正早盘时段：UTC 1:15-3:30（北京时间 9:15-11:30）
+    # - 从 1:15 开始触发（避免 9:00 休市前无效预警）
+    # - 每 5 分钟一次，覆盖 9:15-11:30 全时段
+    - cron: '15-55/5 1-3 * * 1-5'  # UTC 1:15,1:20,...,3:30
     
-    # 下午时段保持不变（UTC 5:00-7:55 → 北京时间13:00-15:55）
-    - cron: '*/5 5-7 * * 1-5'
-  workflow_dispatch:
+    # 修正午盘时段：UTC 5:00-7:00（北京时间 13:00-15:00）
+    # - 从 5:00 整点开始触发
+    # - 每 5 分钟一次，覆盖 13:00-15:00 全时段
+    - cron: '0-55/5 5-7 * * 1-5'   # UTC 5:00,5:05,...,7:00
+  workflow_dispatch:  # 保留手动触发能力
 
 jobs:
   alert-check:
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    # 新增：失败时自动重试1次（应对临时网络问题）
     strategy:
       max-parallel: 1
       fail-fast: false
@@ -34,7 +36,29 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVERS: ${{ secrets.EMAIL_RECEIVERS }}
-        # 关键：添加超时重试 + 显式记录触发时间
         run: |
           echo "【触发时间】$(date +'%Y-%m-%d %H:%M:%S %Z')"
+          # 关键改进：添加时段校验，避免非交易时间执行
+          CURRENT_HOUR=$(date -u +%H)
+          CURRENT_MINUTE=$(date -u +%M)
+          
+          # 早盘校验：UTC 1:15-3:30 (北京时间 9:15-11:30)
+          if [ "$CURRENT_HOUR" -eq 1 ] && [ "$CURRENT_MINUTE" -lt 15 ]; then
+            echo "⚠️ 早盘未开始 (UTC $CURRENT_HOUR:$CURRENT_MINUTE)，跳过执行"
+            exit 0
+          fi
+          
+          # 休市时段校验：UTC 3:31-4:59 (北京时间 11:31-12:59)
+          if [ "$CURRENT_HOUR" -eq 3 ] && [ "$CURRENT_MINUTE" -gt 30 ] || [ "$CURRENT_HOUR" -eq 4 ]; then
+            echo "⚠️ 早盘已结束，午盘未开始 (UTC $CURRENT_HOUR:$CURRENT_MINUTE)，跳过执行"
+            exit 0
+          fi
+          
+          # 午盘校验：UTC 7:01+ (北京时间 15:01+)
+          if [ "$CURRENT_HOUR" -gt 7 ] || [ "$CURRENT_HOUR" -eq 7 ] && [ "$CURRENT_MINUTE" -gt 0 ]; then
+            echo "⚠️ 午盘已结束 (UTC $CURRENT_HOUR:$CURRENT_MINUTE)，跳过执行"
+            exit 0
+          fi
+          
+          # 执行预警逻辑（含重试）
           python scripts/price_alert.py || (sleep 30 && python scripts/price_alert.py)
